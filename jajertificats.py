@@ -42,8 +42,8 @@ with open(FILE_DOMAINS, "r") as f:
 		currentdomain = currentdomain.replace('\n', '')
 		result = sslExpirationStatus(currentdomain, EXPIRATION_DAYS)
 		if result["status"] == "expired":
-			print '\033[1;31m[!]\033[1;m'+" Certificat pour "+currentdomain+" expiré depuis "+result["date"]
+			print '\033[1;31m[!]\033[1;m'+" Certificat pour "+currentdomain+" expiré depuis "+str(result["date"])
 		elif result["status"] == "expiresoon":
-			print '\033[1;33m[!]\033[1;m'+" Certificat pour "+currentdomain+" expire dans "+result["date"]
+			print '\033[1;33m[!]\033[1;m'+" Certificat pour "+currentdomain+" expire dans "+str(result["date"])
 		else:
 			print '\033[1;34m[+]\033[1;m'+" Certificat pour "+currentdomain+" OK"
