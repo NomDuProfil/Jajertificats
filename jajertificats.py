@@ -3,28 +3,17 @@
 import socket
 import ssl
 import datetime
-from termcolor import colored
-from IPy import IP
+import OpenSSL
+import socket
 
 FILE_DOMAINS = "domains.txt"
 EXPIRATION_DAYS = 30
 
 def sslExpirationDate(address):
-	format_date = r'%b %d %H:%M:%S %Y %Z'
-	try:
-	    lebeaucontext = ssl.create_default_context()
-	    sock = socket.socket(socket.AF_INET)
+	cert=ssl.get_server_certificate((address, 443))
+	x509 = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, cert)
 
-	    labelconnexion = lebeaucontext.wrap_socket(
-	        sock,
-	        server_hostname=address,
-	    )
-	    labelconnexion.settimeout(5.0)
-	    labelconnexion.connect((address, 443))
-	    ssl_information = labelconnexion.getpeercert()
-	    return datetime.datetime.strptime(ssl_information['notAfter'], format_date)
-	except:
-		return datetime.datetime.strptime("Mar 1 00:00:00 1900 GMT", format_date)
+	return datetime.datetime.strptime(x509.get_notAfter().decode('ascii'), '%Y%m%d%H%M%SZ')
 
 def sslExpirationCalcul(address):
 	expirationdate = sslExpirationDate(address)
