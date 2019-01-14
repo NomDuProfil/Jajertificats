@@ -6,7 +6,7 @@ import datetime
 from termcolor import colored
 
 FILE_DOMAINS = "domains.txt"
-EXPIRATION_DAYS = 30
+EXPIRATION_DAYS = 256
 
 def sslExpirationDate(address):
     format_date = r'%b %d %H:%M:%S %Y %Z'
@@ -29,10 +29,10 @@ def sslExpirationStatus(address, days_check):
 	getdate = sslExpirationCalcul(address)
 	result = {}
 	result["date"] = getdate.days
-	if getdate < datetime.timedelta(days=0):
-		result["satus"] = "expired"
+	if getdate <= datetime.timedelta(days=0):
+		result["status"] = "expired"
 	elif getdate < datetime.timedelta(days=days_check):
-		result["satus"] = "expiresoon"
+		result["status"] = "expiresoon"
 	else:
 		result["status"] = "ok"
 	return result
