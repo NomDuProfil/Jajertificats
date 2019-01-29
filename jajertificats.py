@@ -17,9 +17,9 @@ TIMEOUT_REQUEST = 5 #En seconde
 EXPIRATION_DAYS = 30 #En nombre de jour
 PERIODE_DE_VALIDITE = 825 #En nombre de jour
 
-LIST_PORT = ['443', '8443']
+LIST_PORT = ['443']
 
-def writeresult(result, pathsave="./"):
+def writeresult(result):
 	wb = Workbook()
 	ws = wb.active
 	listwidthcolumn = [] 
@@ -51,9 +51,13 @@ def writeresult(result, pathsave="./"):
 	ws['G1'].alignment = Alignment(horizontal='center')
 	ws['G1'].font = Font(bold=True)
 	ws['H1'] = "Vérifié par"
-	ws.column_dimensions['H'].width = len("Vérifié par")*1.3
+	ws.column_dimensions['H'].width = len("Emis par")*1.3
 	ws['H1'].alignment = Alignment(horizontal='center')
 	ws['H1'].font = Font(bold=True)
+	ws['I1'] = "Emis pour"
+	ws.column_dimensions['I'].width = len("Emis pour")*1.3
+	ws['I1'].alignment = Alignment(horizontal='center')
+	ws['I1'].font = Font(bold=True)
 	currentline = 2
 	for current in result:
 		if current["status"] == "ok":
@@ -99,15 +103,21 @@ def writeresult(result, pathsave="./"):
 		ws['H'+str(currentline)] = current["deliver"]
 		if ws.column_dimensions['H'].width < len(current["deliver"])*1.3:
 			ws.column_dimensions['H'].width = len(current["deliver"])*1.3
+		ws['I'+str(currentline)] = current["deliverfor"]
+		if ws.column_dimensions['I'].width < len(current["deliverfor"])*1.3:
+			ws.column_dimensions['I'].width = len(current["deliverfor"])*1.3
 		currentline+=1
-	wb.save(pathsave+'StatusCertificates.xlsx')
+	wb.save('StatusCertificates.xlsx')
 
 def sslExpirationDate(address, port):
 	if DUREE_ENTRE_CHAQUE_REQUETE != 0:
 		sleep(DUREE_ENTRE_CHAQUE_REQUETE)
 	try:
-		cert=ssl.get_server_certificate((address, int(port)), ssl_version=ssl.PROTOCOL_TLSv1_2)
-		certLoad = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, cert)
+		conn = ssl.create_connection((address, int(port)))
+		context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_2)
+		sock = context.wrap_socket(conn, server_hostname=address)
+		certificate = ssl.DER_cert_to_PEM_cert(sock.getpeercert(True))
+		certLoad = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, certificate)
 		certinfo = {}
 		certinfo["notBefore"] = datetime.datetime.strptime(certLoad.get_notBefore().decode('ascii'), '%Y%m%d%H%M%SZ')
 		certinfo["notAfter"] = datetime.datetime.strptime(certLoad.get_notAfter().decode('ascii'), '%Y%m%d%H%M%SZ')
@@ -117,35 +127,21 @@ def sslExpirationDate(address, port):
 			certinfo["deliver"] = certLoad.get_issuer().O
 		else:
 			certinfo["deliver"] = "Introuvable"
+		if certLoad.get_subject().CN != None:
+			certinfo["deliverfor"] = certLoad.get_subject().CN
+			if certLoad.get_subject().CN != address:
+				certinfo["status"] = "NOT_MATCH"
+		else:
+			certinfo["deliverfor"] = "Introuvable"
 		return certinfo
-	except ssl.SSLError as err:
-		if ("SSLV3_ALERT" in str(err) or "WRONG_SIGNATURE_TYPE" in str(err) or "TLSV1_ALERT_INTERNAL_ERROR" in str(err)):
+	except socket.error as err:
+		if ("WRONG_SSL_VERSION" in str(err) or "UNSUPPORTED_PROTOCOL" in str(err)):
 			try:
-				context = ssl.create_default_context()
-				conn = context.wrap_socket(socket.socket(socket.AF_INET), server_hostname=address)
-				conn.connect((address, int(port)))
-				cert = conn.getpeercert()
-				certinfo = {}
-				certinfo["notBefore"] = datetime.datetime.strptime(cert["notBefore"].decode('ascii'), '%b %d %H:%M:%S %Y %Z')
-				certinfo["notAfter"] = datetime.datetime.strptime(cert["notAfter"].decode('ascii'), '%b %d %H:%M:%S %Y %Z')
-				try:
-					certinfo["deliver"] = cert["issuer"][3][0][1]
-				except IndexError:
-					certinfo["deliver"] = cert["issuer"][2][0][1]
-				conn.close()
-				return certinfo
-			except socket.error as err:
-				#print str(err)
-				return "ERROR"
-			except ssl.CertificateError as err:
-				#print str(err)
-				if ("doesn't match either of" in str(err)):
-					return "NOT_MATCH"
-				return "ERROR"
-		elif ("WRONG_SSL_VERSION" in str(err) or "UNSUPPORTED_PROTOCOL" in str(err)):
-			try:
-				cert=ssl.get_server_certificate((address, int(port)), ssl_version=ssl.PROTOCOL_TLSv1)
-				certLoad = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, cert)
+				conn = ssl.create_connection((address, int(port)))
+				context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+				sock = context.wrap_socket(conn, server_hostname=address)
+				certificate = ssl.DER_cert_to_PEM_cert(sock.getpeercert(True))
+				certLoad = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, certificate)
 				certinfo = {}
 				certinfo["notBefore"] = datetime.datetime.strptime(certLoad.get_notBefore().decode('ascii'), '%Y%m%d%H%M%SZ')
 				certinfo["notAfter"] = datetime.datetime.strptime(certLoad.get_notAfter().decode('ascii'), '%Y%m%d%H%M%SZ')
@@ -155,31 +151,100 @@ def sslExpirationDate(address, port):
 					certinfo["deliver"] = certLoad.get_issuer().O
 				else:
 					certinfo["deliver"] = "Introuvable"
+				if certLoad.get_subject().CN != None:
+					certinfo["deliverfor"] = certLoad.get_subject().CN
+					if certLoad.get_subject().CN != address:
+						certinfo["status"] = "NOT_MATCH"
+				else:
+					certinfo["deliverfor"] = "Introuvable"
 				return certinfo
 			except ssl.SSLError as err:
-				#print str(err)
 				return "ERROR"
 			except socket.error as err:
-				#print str(err)
 				return "ERROR"
-		#print str(err)
+		elif ("[Errno 0]" in str(err)):
+			try:
+				conn = ssl.create_connection((address, int(port)))
+				context = ssl.SSLContext(ssl.PROTOCOL_TLSv1_1)
+				sock = context.wrap_socket(conn, server_hostname=address)
+				certificate = ssl.DER_cert_to_PEM_cert(sock.getpeercert(True))
+				certLoad = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, certificate)
+				certinfo = {}
+				certinfo["notBefore"] = datetime.datetime.strptime(certLoad.get_notBefore().decode('ascii'), '%Y%m%d%H%M%SZ')
+				certinfo["notAfter"] = datetime.datetime.strptime(certLoad.get_notAfter().decode('ascii'), '%Y%m%d%H%M%SZ')
+				if certLoad.get_issuer().CN != None:
+					certinfo["deliver"] = certLoad.get_issuer().CN
+				elif certLoad.get_issuer().O != None:
+					certinfo["deliver"] = certLoad.get_issuer().O
+				else:
+					certinfo["deliver"] = "Introuvable"
+				if certLoad.get_subject().CN != None:
+					certinfo["deliverfor"] = certLoad.get_subject().CN
+					if certLoad.get_subject().CN != address:
+						certinfo["status"] = "NOT_MATCH"
+				else:
+					certinfo["deliverfor"] = "Introuvable"
+				return certinfo
+			except ssl.CertificateError as err:
+				if DEBUG:
+					print str(err)
+				if ("doesn't match either of" in str(err)):
+					return "NOT_MATCH"
+				return "ERROR"
+			except socket.error as err:
+				if ("[Errno 0]" in str(err)):
+					try:
+						conn = ssl.create_connection((address, int(port)))
+						context = ssl.SSLContext(ssl.PROTOCOL_TLSv1)
+						sock = context.wrap_socket(conn, server_hostname=address)
+						certificate = ssl.DER_cert_to_PEM_cert(sock.getpeercert(True))
+						certLoad = OpenSSL.crypto.load_certificate(OpenSSL.crypto.FILETYPE_PEM, certificate)
+						certinfo = {}
+						certinfo["notBefore"] = datetime.datetime.strptime(certLoad.get_notBefore().decode('ascii'), '%Y%m%d%H%M%SZ')
+						certinfo["notAfter"] = datetime.datetime.strptime(certLoad.get_notAfter().decode('ascii'), '%Y%m%d%H%M%SZ')
+						if certLoad.get_issuer().CN != None:
+							certinfo["deliver"] = certLoad.get_issuer().CN
+						elif certLoad.get_issuer().O != None:
+							certinfo["deliver"] = certLoad.get_issuer().O
+						else:
+							certinfo["deliver"] = "Introuvable"
+						if certLoad.get_subject().CN != address:
+							certinfo["status"] = "NOT_MATCH"
+						return certinfo
+					except socket.error as err:
+						if DEBUG:
+							print str(err)
+						if ("[Errno 0]" in str(err)):
+							return "INVALID CERT"
+				print str(err)+"second socket"
+				return "ERROR"
+		elif "Name or service not known" in str(err):
+			return "ERR RESOLUTION"
+		elif "Connection refused" in str(err):
+			return "CONN REFUSED"
+		if DEBUG:
+			print str(err)
 		return "ERROR"
-	except socket.error as err:
+	except ssl.CertificateError as err:
+		if ("doesn't match either of" in str(err)):
+			return "NOT_MATCH"
+		if DEBUG:
+			print str(err)
+		return "ERROR"
+	except ssl.gaierror as err:
 		if "Name or service not known" in str(err):
 			return "ERR RESOLUTION"
-		if "Connection refused" in str(err):
-			return "CONN REFUSED"
-		if "[Errno 0]" in str(err):
-			return "INVALID CERT"
-		return "ERROR"
 
 def sslExpirationCalcul(address, port):
 	expirationdate = sslExpirationDate(address, port)
 	if type(expirationdate) != str:
 		certcalcul = {}
+		if "status" in expirationdate:
+			certcalcul["status"] = expirationdate["status"]
 		certcalcul["notAfter"] = expirationdate["notAfter"]
 		certcalcul["notBefore"] = expirationdate["notBefore"]
 		certcalcul["deliver"] = expirationdate["deliver"]
+		certcalcul["deliverfor"] = expirationdate["deliverfor"]
 		certcalcul["deltaToday"] = expirationdate["notAfter"] - datetime.datetime.utcnow()
 		certcalcul["deltaValidity"] = expirationdate["notAfter"] - expirationdate["notBefore"]
 		return certcalcul
@@ -198,6 +263,7 @@ def sslExpirationStatus(address, port, days_check, validity_period, return_value
 		result["deliver"] = "ERROR"
 		result["notAfter"] = "ERROR"
 		result["notBefore"] = "ERROR"
+		result["deliverfor"] = "ERROR"
 		return_value[0] = result
 	else:
 		result["notAfter"] = getdate["notAfter"]
@@ -205,6 +271,7 @@ def sslExpirationStatus(address, port, days_check, validity_period, return_value
 		result["deliver"] = getdate["deliver"]
 		result["deltaToday"] = getdate["deltaToday"].days
 		result["periodevalidity"] = getdate["deltaValidity"].days
+		result["deliverfor"] = getdate["deliverfor"]
 		if getdate["deltaToday"] <= datetime.timedelta(days=0):
 			result["status"] = "expired"
 		elif getdate["deltaToday"] < datetime.timedelta(days=days_check):
@@ -214,7 +281,9 @@ def sslExpirationStatus(address, port, days_check, validity_period, return_value
 				result["status"] = "validitytoolong"
 			else:
 				result["status"] = "ok"
-		return_value[0] = result
+	if "status" in getdate:
+		result["status"] = getdate["status"]
+	return_value[0] = result
 
 if len(sys.argv) < 2:
 	print "usage: python jajertificats.py PATH_FICHIER_LISTE_DOMAINE"
@@ -233,33 +302,39 @@ with open(sys.argv[1], "r") as f:
 			if not p.is_alive():
 				result = resultthread[0]
 				if result["status"] == "ERR RESOLUTION":
-					print u'\033[1;31m[ERR RÉSOLUTION]\033[1;m'+" Impossible de joindre "+domaininprogress.encode('utf8')
+					print '\033[1;31m[ERR RESOLUTION]\033[1;m'+" Impossible de joindre "+domaininprogress
 				elif result["status"] == "CONN REFUSED":
-					print u'\033[1;31m[CONN REFUSÉE]\033[1;m'+u" Connexion refusée pour "+domaininprogress.encode('utf8')+" sur le port "+currentport
+					print '\033[1;31m[CONN REFUSEE]\033[1;m'+u" Connexion refusée pour "+domaininprogress+" sur le port "+currentport
 				elif result["status"] == "INVALID CERT":
-					print '\033[1;31m[CERT INVALIDE]\033[1;m'+u" Certificat invalide pour "+domaininprogress.encode('utf8')+" sur le port "+currentport
+					print '\033[1;31m[CERT INVALIDE]\033[1;m'+u" Certificat invalide pour "+domaininprogress+" sur le port "+currentport
 				elif result["status"] == "ERROR":
-					print '\033[1;31m[ERREUR]\033[1;m'+" Impossible de recuperer le certificat pour "+domaininprogress.encode('utf8')+" sur le port "+currentport
+					print '\033[1;31m[ERREUR]\033[1;m'+" Impossible de recuperer le certificat pour "+domaininprogress+" sur le port "+currentport
+				elif result["status"] == "NOT_MATCH":
+					print '\033[1;31m[HOSTNAME INVALIDE]\033[1;m'+" Le nom de l\'hostname ne correspond pas au certificat pour "+domaininprogress+" sur le port "+currentport
 				elif result["status"] == "expired":
-					print u'\033[1;31m[EXPIRÉ]\033[1;m'+" Certificat pour "+domaininprogress.encode('utf8')+u" expiré depuis "+str(result["deltaToday"]*-1)+" jours sur le port "+currentport
+					print '\033[1;31m[EXPIRE]\033[1;m'+" Certificat pour "+domaininprogress+u" expiré depuis "+str(result["deltaToday"]*-1)+" jours sur le port "+currentport
 				elif result["status"] == "expiresoon":
-					print u'\033[1;33m[EXPIRE BIENTÔT]\033[1;m'+" Certificat pour "+domaininprogress.encode('utf8')+" expire dans "+str(result["deltaToday"])+" jours sur le port "+currentport
+					print '\033[1;33m[EXPIRE BIENTOT]\033[1;m'+" Certificat pour "+domaininprogress+" expire dans "+str(result["deltaToday"])+" jours sur le port "+currentport
 				elif result["status"] == "validitytoolong":
-					print u'\033[1;33m[VALIDITÉ TROP LONGUE]\033[1;m'+" Certificat pour "+domaininprogress.encode('utf8')+u" a une période de validité de "+str(result["periodevalidity"])+" jours sur le port "+currentport
+					print '\033[1;33m[VALIDITE TROP LONGUE]\033[1;m'+" Certificat pour "+domaininprogress+u" a une période de validité de "+str(result["periodevalidity"])+" jours sur le port "+currentport
 				else:
-					print '\033[1;34m[OK]\033[1;m'+" Certificat pour "+domaininprogress.encode('utf8')+" OK sur le port "+currentport
+					print '\033[1;34m[OK]\033[1;m'+" Certificat pour "+domaininprogress+" OK sur le port "+currentport
 			else:
-				p.terminate()
+				try:
+					p.terminate()
+				except Exception as e:
+					print e
 				result = {}
 				result["domain"] = domaininprogress
 				result["status"] = "TIMEOUT"
 				result["port"] = currentport
 				result["deliver"] = "ERROR"
+				result["deliverfor"] = "ERROR"
 				result["deltaToday"] = "ERROR"
 				result["notAfter"] = "ERROR"
 				result["notBefore"] = "ERROR"
 				result["periodevalidity"] = "ERROR"
-				print '\033[1;31m[TIMEOUT]\033[1;m'+" TIMEOUT pour "+domaininprogress.encode('utf8')+" sur le port "+currentport
+				print '\033[1;31m[TIMEOUT]\033[1;m'+" TIMEOUT pour "+domaininprogress+" sur le port "+currentport
 			allresult.append(result)
 
 print "\nSauvegarde des resultats en cours..."
