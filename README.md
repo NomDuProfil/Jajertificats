@@ -1,5 +1,5 @@
 A INSTALLER :<br/><br/>
-```pip install pyopenssl```
+```pip install pyopenssl openpyxl```
 
 A MODIFIER :<br/><br/>
 
