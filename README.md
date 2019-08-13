@@ -1,7 +1,15 @@
-A INSTALLER :<br/><br/>
-```pip install pyopenssl```
+# INSTALLER
 
-A MODIFIER :<br/><br/>
+```pip install pyopenssl openpyxl```
 
-FILE_DOMAINS = Nom du fichier contenant les noms de domaines (un par ligne)<br/>
-EXPIRATION_DAYS = Combien de jours pour juger qu'un certificat expire bientôt<br/>
+# MODIFIER
+
+DUREE_ENTRE_CHAQUE_REQUETE = 0 #En seconde
+TIMEOUT_REQUEST = 5 #En seconde
+EXPIRATION_DAYS = 30 #En nombre de jour
+PERIODE_DE_VALIDITE = 825 #En nombre de jour
+DEBUG = False #Mode DEBUG
+
+# Utilisation
+
+python jajertificats.py PATH_FICHIER_LISTE_DOMAINE
