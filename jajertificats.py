@@ -1,16 +1,10 @@
 # -*- coding: utf-8 -*-
 
-import socket
-import ssl
-import datetime
-import OpenSSL
-import socket
+import socket, ssl, datetime, OpenSSL, sys, os, multiprocessing, re, configparser, glob, string
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import PatternFill, Font, Alignment
-import sys
-import multiprocessing
+from openpyxl.chart import PieChart, Reference, label, Series
 from time import sleep
-import re
 
 DUREE_ENTRE_CHAQUE_REQUETE = 0 #En seconde
 TIMEOUT_REQUEST = 5 #En seconde
@@ -18,7 +12,7 @@ EXPIRATION_DAYS = 30 #En nombre de jour
 PERIODE_DE_VALIDITE = 825 #En nombre de jour
 DEBUG = False #Mode DEBUG
 
-LIST_PORT = ['443', '8443']
+LIST_PORT = ['443']
 
 def checkconfigfile(path):
 	config = configparser.ConfigParser()
@@ -35,42 +29,6 @@ def search_start_line(worksheet):
 	while not (worksheet["B"+str(currentline)].value == "Domaines" or worksheet["B"+str(currentline)].value == "Domain(s)"):
 		currentline = currentline+1
 	return currentline+1
-
-def dumpfromexcel(filepath):
-	fileexcel = load_workbook(filepath)
-	listdomain = []
-	ws = fileexcel["Hacker's View"]
-	currentline = search_start_line(ws)-1
-	while ws["C"+str(currentline)].value != None:
-		currentline +=1
-		#currentdomain de la forme PORT1@PORT2@DOMAIN
-		currentdomain = ""
-		try:
-			if not any(currentport in re.search('TCP\((.*)\)', ws["D"+str(currentline)].value.replace(' ', '')).group(1).split(',') for currentport in LIST_PORT):
-				continue
-		except:
-			continue
-		for currentport in LIST_PORT:
-			if currentport in ws["D"+str(currentline)].value:
-				if currentdomain == "":
-					currentdomain = currentport
-				else:
-					currentdomain = currentdomain+"@"+currentport
-		if ws["B"+str(currentline)].value != None and ws["B"+str(currentline)].value != "s/o":
-			if "~" in ws["B"+str(currentline)].value:
-				for current in ws["B"+str(currentline)].value.split('~'):
-					listdomain.append(currentdomain+"@"+current.replace('\n', ''))
-			else:
-				listdomain.append(currentdomain+"@"+ws["B"+str(currentline)].value.replace('\n', ''))
-		elif ws["C"+str(currentline)].value != None:
-			if ("Dynamique" not in ws["C"+str(currentline)].value) and ("Dynamic" not in ws["C"+str(currentline)].value) and ("s/o" not in ws["C"+str(currentline)].value) and ("variable (load balanced)" not in ws["C"+str(currentline)].value):
-				if '~' in ws["C"+str(currentline)].value:
-					for current in ws["C"+str(currentline)].value.split('~'):
-						listdomain.append(currentdomain+"@"+current.replace('\n', ''))
-				else:
-					listdomain.append(currentdomain+"@"+ws["C"+str(currentline)].value.replace('\n', ''))
-
-	return listdomain
 
 def sortresult(result):
 	statusarray = {"ok": [], "wildcard": [], "expire": [], "expiresoon": [], "expiresoon": [], "validitytoolong": [], "notmatch": [], "timeout": [], "errresolution": [], "error": []}
@@ -134,10 +92,10 @@ def writeresult(result, pathsave):
 	wssommaire = wb.active
 	wssommaire.title = u'Sommaire'
 	wssommaire.column_dimensions['A'].width = len("VALIDITE TROP LONGUE")*1.3
-	wssommaire["A1"] = u"EXPIRÉS"
+	wssommaire["A1"] = u"EXPIRÉ"
 	wssommaire["A1"].fill = PatternFill(fill_type="solid", start_color=getstatuscolor("expire"), end_color=getstatuscolor("expire"))
 	wssommaire["A1"].font = Font(color='FFFFFF')
-	wssommaire["A2"] = u"EXPIRENT BIENTÔT"
+	wssommaire["A2"] = u"EXPIRE BIENTÔT"
 	wssommaire["A2"].fill = PatternFill(fill_type="solid", start_color=getstatuscolor("expiresoon"), end_color=getstatuscolor("expiresoon"))
 	wssommaire["A2"].font = Font(color='FFFFFF')
 	wssommaire["A3"] = "VALIDITE TROP LONGUE"
@@ -279,8 +237,11 @@ def writeresult(result, pathsave):
 			ws['A'+str(countersheet["principal"])].font = Font(color=getstatustextcolor(current["status"]))
 			ws['A'+str(countersheet["principal"])].alignment = Alignment(horizontal='center')
 			ws['B'+str(countersheet["principal"])] = current["domain"]
-			if ws.column_dimensions['B'].width < len(current["domain"])*1.3:
-				ws.column_dimensions['B'].width = len(current["domain"])*1.3
+			if ws.column_dimensions['B'].width < len(current["domain"])*1.3 and ws.column_dimensions['B'].width != 255:
+				if len(current["domain"])*1.3 >= 255:
+					ws.column_dimensions['B'].width = 255
+				else:
+					ws.column_dimensions['B'].width = len(current["domain"])*1.3
 			if current["status"] == "errresolution":
 				ws['C'+str(countersheet["principal"])] = '*'
 			else:
@@ -288,11 +249,11 @@ def writeresult(result, pathsave):
 			if ws.column_dimensions['C'].width < len(current["port"])*1.3:
 				ws.column_dimensions['C'].width = len(current["port"])*1.3
 			if (str(current["notBefore"]) != "error"):
-				ws['D'+str(countersheet["principal"])] = str(current["notBefore"].year)+'-'+str(current["notBefore"].month)+'-'+str(current["notBefore"].day)
+				ws['D'+str(countersheet["principal"])] = str(current["notBefore"].year)+'-'+"{:02d}".format(current["notBefore"].month)+'-'+"{:02d}".format(current["notBefore"].day)
 			else:
 				ws['D'+str(countersheet["principal"])] = "ERROR"
 			if (str(current["notAfter"]) != "error"):
-				ws['E'+str(countersheet["principal"])] = str(current["notAfter"].year)+'-'+str(current["notAfter"].month)+'-'+str(current["notAfter"].day)
+				ws['E'+str(countersheet["principal"])] = str(current["notAfter"].year)+'-'+"{:02d}".format(current["notAfter"].month)+'-'+"{:02d}".format(current["notAfter"].day)
 			else:
 				ws['E'+str(countersheet["principal"])] = "ERROR"
 			if(str(current["serialNumber"]) != "error"):
@@ -361,7 +322,9 @@ def sslExpirationDate(address, port):
 						if "subjectAltName" in certLoad.get_extension(index).get_short_name():
 							tmp = ''.join([current if ord(current) < 128 else ' ' for current in certLoad.get_extension(index).get_data().lower()])#Remove non ASCII char
 							tmp = ''.join([current for current in tmp if current in string.printable])#Remove non printable char
-							if address.lower() not in ' '.join(tmp.split()).split(' '):
+							if "*."+'.'.join(address.lower().split('.')[-2:]) in ' '.join(tmp.split()).split(' '):
+								certinfo["status"] = "wildcard"
+							elif address.lower() not in ' '.join(tmp.split()).split(' '):
 								return "notmatch"
 							break
 		else:
@@ -396,7 +359,9 @@ def sslExpirationDate(address, port):
 									if "subjectAltName" in certLoad.get_extension(index).get_short_name():
 										tmp = ''.join([current if ord(current) < 128 else ' ' for current in certLoad.get_extension(index).get_data().lower()])#Remove non ASCII char
 										tmp = ''.join([current for current in tmp if current in string.printable])#Remove non printable char
-										if address.lower() not in ' '.join(tmp.split()).split(' '):
+										if "*."+'.'.join(address.lower().split('.')[-2:]) in ' '.join(tmp.split()).split(' '):
+											certinfo["status"] = "wildcard"
+										elif address.lower() not in ' '.join(tmp.split()).split(' '):
 											return "notmatch"
 										break
 				else:
@@ -436,7 +401,9 @@ def sslExpirationDate(address, port):
 								if "subjectAltName" in certLoad.get_extension(index).get_short_name():
 									tmp = ''.join([current if ord(current) < 128 else ' ' for current in certLoad.get_extension(index).get_data().lower()])#Remove non ASCII char
 									tmp = ''.join([current for current in tmp if current in string.printable])#Remove non printable char
-									if address.lower() not in ' '.join(tmp.split()).split(' '):
+									if "*."+'.'.join(address.lower().split('.')[-2:]) in ' '.join(tmp.split()).split(' '):
+										certinfo["status"] = "wildcard"
+									elif address.lower() not in ' '.join(tmp.split()).split(' '):
 										return "notmatch"
 									break
 				else:
@@ -474,7 +441,9 @@ def sslExpirationDate(address, port):
 									if "subjectAltName" in certLoad.get_extension(index).get_short_name():
 										tmp = ''.join([current if ord(current) < 128 else ' ' for current in certLoad.get_extension(index).get_data().lower()])#Remove non ASCII char
 										tmp = ''.join([current for current in tmp if current in string.printable])#Remove non printable char
-										if address.lower() not in ' '.join(tmp.split()).split(' '):
+										if "*."+'.'.join(address.lower().split('.')[-2:]) in ' '.join(tmp.split()).split(' '):
+											certinfo["status"] = "wildcard"
+										elif address.lower() not in ' '.join(tmp.split()).split(' '):
 											return "notmatch"
 										break
 						return certinfo
@@ -576,10 +545,10 @@ def sslExpirationStatus(address, port, days_check, validity_period, return_value
 def checkportserial(listresult, currentcheck):
 	for current in listresult:
 		if current["serialNumber"] == currentcheck["serialNumber"]:
-			if currentcheck["domain"] not in current["domain"].split(', '):
-				current["domain"] = current["domain"]+', '+currentcheck["domain"]
-			if currentcheck["port"] not in current["port"].split(', '):
-				current["port"] = current["port"]+', '+currentcheck["port"]
+			if currentcheck["domain"] not in current["domain"].split('~'):
+				current["domain"] = current["domain"]+'~'+currentcheck["domain"]
+			if currentcheck["port"] not in current["port"].split('~'):
+				current["port"] = current["port"]+'~'+currentcheck["port"]
 			return listresult
 	listresult.append(currentcheck)
 	return listresult
@@ -588,6 +557,8 @@ if len(sys.argv) < 2:
 	print "usage: python jajertificats.py PATH_FICHIER_LISTE_DOMAINE"
 	sys.exit(1)
 allresult = []
+countcheck = 1
+countlistcheck = len(open(sys.argv[1]).readlines(  ))*len(LIST_PORT)
 with open(sys.argv[1], "r") as f:
     for currentdomain in f:
 		currentdomain = currentdomain.replace('\n', '')
@@ -595,29 +566,32 @@ with open(sys.argv[1], "r") as f:
 			domaininprogress = currentdomain
 			manager = multiprocessing.Manager()
 			resultthread = manager.dict()
-			p = multiprocessing.Process(target=sslExpirationStatus, args=(domaininprogress, currentport, EXPIRATION_DAYS, PERIODE_DE_VALIDITE, resultthread))
+			p = multiprocessing.Process(target=sslExpirationStatus, args=(domaininprogress.encode('utf8'), currentport, EXPIRATION_DAYS, PERIODE_DE_VALIDITE, resultthread))
 			p.start()
 			p.join(TIMEOUT_REQUEST)
 			if not p.is_alive():
 				result = resultthread[0]
-				if result["status"] == "ERR RESOLUTION":
-					print '\033[1;31m[ERR RESOLUTION]\033[1;m'+" Impossible de joindre "+domaininprogress
+				if result["status"] == "errresolution":
+					errresolutiondomain.append(domaininprogress)
+					print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;31m[ERR RESOLUTION]\033[1;m'+"       Impossible de joindre "+domaininprogress+u", les autres ports ne seront pas vérifiés"
 				elif result["status"] == "CONN REFUSED":
-					print '\033[1;31m[CONN REFUSEE]\033[1;m'+u" Connexion refusée pour "+domaininprogress+" sur le port "+currentport
+					print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;31m[CONN REFUSEE]\033[1;m'+u"         Connexion refusée pour "+domaininprogress+" sur le port "+currentport
 				elif result["status"] == "INVALID CERT":
-					print '\033[1;31m[CERT INVALIDE]\033[1;m'+u" Certificat invalide pour "+domaininprogress+" sur le port "+currentport
-				elif result["status"] == "ERROR":
-					print '\033[1;31m[ERREUR]\033[1;m'+" Impossible de recuperer le certificat pour "+domaininprogress+" sur le port "+currentport
-				elif result["status"] == "NOT_MATCH":
-					print '\033[1;31m[HOSTNAME INVALIDE]\033[1;m'+" Le nom de l\'hostname ne correspond pas au certificat pour "+domaininprogress+" sur le port "+currentport
-				elif result["status"] == "expired":
-					print '\033[1;31m[EXPIRE]\033[1;m'+" Certificat pour "+domaininprogress+u" expiré depuis "+str(result["deltaToday"]*-1)+" jours sur le port "+currentport
+					print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;31m[CERT INVALIDE]\033[1;m'+u"        Certificat invalide pour "+domaininprogress+" sur le port "+currentport
+				elif result["status"] == "error":
+					print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;31m[ERREUR]\033[1;m'+"               Impossible de recuperer le certificat pour "+domaininprogress+" sur le port "+currentport
+				elif result["status"] == "notmatch":
+					print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;31m[HOSTNAME INVALIDE]\033[1;m'+"    Le nom de l\'hostname ne correspond pas au certificat pour "+domaininprogress+" sur le port "+currentport
+				elif result["status"] == "expire":
+					print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;31m[EXPIRE]\033[1;m'+"               Certificat pour "+domaininprogress+u" expiré depuis "+str(result["deltaToday"]*-1)+" jours sur le port "+currentport
 				elif result["status"] == "expiresoon":
-					print '\033[1;33m[EXPIRE BIENTOT]\033[1;m'+" Certificat pour "+domaininprogress+" expire dans "+str(result["deltaToday"])+" jours sur le port "+currentport
+					print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;33m[EXPIRE BIENTOT]\033[1;m'+"       Certificat pour "+domaininprogress+" expire dans "+str(result["deltaToday"])+" jours sur le port "+currentport
 				elif result["status"] == "validitytoolong":
-					print '\033[1;33m[VALIDITE TROP LONGUE]\033[1;m'+" Certificat pour "+domaininprogress+u" a une période de validité de "+str(result["periodevalidity"])+" jours sur le port "+currentport
+					print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;33m[VALIDITE TROP LONGUE]\033[1;m'+" Certificat pour "+domaininprogress+u" a une période de validité de "+str(result["periodevalidity"])+" jours sur le port "+currentport
+				elif result["status"] == "wildcard":
+					print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;34m[WILDCARD]\033[1;m'+"             Certificat pour "+domaininprogress+" OK (wildcard) sur le port "+currentport
 				else:
-					print '\033[1;34m[OK]\033[1;m'+" Certificat pour "+domaininprogress+" OK sur le port "+currentport
+					print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;34m[OK]\033[1;m'+"                   Certificat pour "+domaininprogress+" OK sur le port "+currentport
 			else:
 				try:
 					p.terminate()
@@ -625,17 +599,22 @@ with open(sys.argv[1], "r") as f:
 					print e
 				result = {}
 				result["domain"] = domaininprogress
-				result["status"] = "TIMEOUT"
+				result["status"] = "timeout"
 				result["port"] = currentport
-				result["deliver"] = "ERROR"
-				result["deliverfor"] = "ERROR"
-				result["deltaToday"] = "ERROR"
-				result["notAfter"] = "ERROR"
-				result["notBefore"] = "ERROR"
-				result["periodevalidity"] = "ERROR"
-				print '\033[1;31m[TIMEOUT]\033[1;m'+" TIMEOUT pour "+domaininprogress+" sur le port "+currentport
-			allresult.append(result)
+				result["deliver"] = "error"
+				result["deliverfor"] = "error"
+				result["deltaToday"] = "error"
+				result["notAfter"] = "error"
+				result["notBefore"] = "error"
+				result["serialNumber"] = "error"
+				result["periodevalidity"] = "error"
+				print "[Check "+str(countcheck).zfill(len(str(countlistcheck)))+" / "+str(countlistcheck)+"] "+'\033[1;31m[TIMEOUT]\033[1;m'+"              Timeout pour "+domaininprogress+" sur le port "+currentport
+			if result["serialNumber"] != "error":
+				allresult = checkportserial(allresult, result)
+			else:
+				allresult.append(result)
+			countcheck += 1
 
 print "\nSauvegarde des resultats en cours..."
-writeresult(allresult)
+writeresult(allresult, './')
 print "Resultats disponible dans le fichier StatusCertificates.xlsx"
