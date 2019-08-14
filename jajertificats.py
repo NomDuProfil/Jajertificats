@@ -37,7 +37,7 @@ def sortresult(result):
 			statusarray[current["status"]].append(current)
 		except:
 			statusarray["error"].append(current)
-	finaltab = statusarray["expire"]+statusarray["expiresoon"]+statusarray["validitytoolong"]+statusarray["notmatch"]+statusarray["wildcard"]+statusarray["ok"]+statusarray["errresolution"]+statusarray["error"]
+	finaltab = statusarray["expire"]+statusarray["expiresoon"]+statusarray["validitytoolong"]+statusarray["notmatch"]+statusarray["wildcard"]+statusarray["ok"]+statusarray["errresolution"]+statusarray["error"]+statusarray["timeout"]
 	return finaltab
 
 def getstatuscolor(status):
